@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Обозреватель Технической Документации</title>
+    <link rel="stylesheet" href="/assets/styles.css?v=5" />
+  </head>
+  <body>
+    <header class="header-top">
+      <div class="brand-left">
+        <button class="burger" type="button" aria-label="Меню">☰</button>
+        <span class="brand-title">Обозреватель Технической Документации</span>
+      </div>
+      <div class="header-right">
+        <button id="help-button" type="button" class="help-link" aria-label="Открыть справку">Помощь</button>
+        <div class="auth-wrap">
+          <button id="auth-button" type="button" class="user-pill" aria-haspopup="menu" aria-expanded="false">Вход</button>
+          <div id="auth-menu" class="auth-menu is-hidden" role="menu" aria-label="Авторизация">
+            <button type="button" class="auth-menu-item" role="menuitem" data-auth-action="login">Вход в программу</button>
+            <button type="button" class="auth-menu-item" role="menuitem" data-auth-action="register">Регистрация</button>
+            <button type="button" class="auth-menu-item is-hidden" role="menuitem" data-auth-action="logout">Выход из программы</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section class="sub-header">
+      <a class="company-link" href="https://www.golibas.ru" target="_blank" rel="noopener noreferrer">ООО "Голибас Телком"</a>
+    </section>
+
+    <div class="app-shell">
+      <nav class="tabs-row" aria-label="Разделы">
+        <button type="button" class="tab-button" data-tab="home" aria-controls="home-view">Домой</button>
+        <button type="button" class="tab-button active" data-tab="library" aria-controls="library-view">Библиотека</button>
+        <button type="button" class="tab-button" data-tab="glossary" aria-controls="glossary-view">Справочник</button>
+        <button type="button" class="tab-button" data-tab="my-collection" aria-controls="collection-view">Моя Коллекция</button>
+        <button type="button" class="tab-button" data-tab="my-doc" aria-controls="mydoc-view">Мои Документы</button>
+      </nav>
+
+      <form id="search-form" class="search-row">
+        <button type="button" class="filter-icon" aria-label="Фильтры">⏃</button>
+        <input
+          id="search-input"
+          type="search"
+          placeholder="Search for a library..."
+          aria-label="Search for a library"
+        />
+        <button type="submit" class="search-submit" aria-label="Поиск">🔍</button>
+      </form>
+
+      <main class="layout">
+        <aside class="filters-panel" id="filters-panel">
+          <div class="filters-header">
+            <h2>Filters</h2>
+            <span class="filters-close">×</span>
+          </div>
+          <div id="filters-content" class="filters-content">
+            <details open>
+              <summary>Library Type <span>(all)</span></summary>
+            </details>
+            <details open>
+              <summary>Date Created <span>(all)</span></summary>
+            </details>
+            <details open>
+              <summary>Product Folder <span>(all)</span></summary>
+            </details>
+          </div>
+        </aside>
+
+        <section class="content-panel">
+          <section id="library-view" class="tab-view">
+            <h1 class="content-title">Library Search - Help</h1>
+
+            <section class="recent-box">
+              <h2>Recently Opened Libraries</h2>
+              <ul id="recent-list" class="recent-list">
+                <li class="empty-state">Библиотеки пока не загружены.</li>
+              </ul>
+            </section>
+
+            <section class="help-box">
+              <div class="book-icon" aria-hidden="true">📖</div>
+              <div>
+                <h3>Library Search</h3>
+                <p>Learn how to find any library both fast and easy using ELEX filter and search features!</p>
+              </div>
+            </section>
+
+            <section class="search-results-wrap">
+              <div class="result-header">
+                <h2>Search Results</h2>
+                <button id="refresh-tree" type="button" class="ghost-button">Refresh</button>
+              </div>
+              <div id="search-results" class="search-results empty-state">Результаты поиска появятся здесь.</div>
+            </section>
+
+            <article id="doc-content" class="reader-card empty-state">
+              Откройте библиотеку из списка выше или найдите документ через строку поиска.
+            </article>
+          </section>
+
+          <section id="home-view" class="tab-view is-hidden">
+            <h1 class="content-title">Домой</h1>
+            <article class="reader-card">Добро пожаловать в Обозреватель Технической Документации. Откройте раздел Библиотека для поиска и просмотра документации.</article>
+          </section>
+
+          <section id="glossary-view" class="tab-view is-hidden">
+            <h1 class="content-title">Справочник</h1>
+            <article class="reader-card">Раздел глоссария готов к подключению. Здесь будут отображаться термины и определения.</article>
+          </section>
+
+          <section id="collection-view" class="tab-view is-hidden">
+            <h1 class="content-title">Моя Коллекция</h1>
+            <article class="reader-card">Личная коллекция пока пуста. Добавляйте документы из результатов поиска.</article>
+          </section>
+
+          <section id="mydoc-view" class="tab-view is-hidden">
+            <h1 class="content-title">Мои Документы</h1>
+            <article class="reader-card">В этом разделе будут ваши сохраненные документы и заметки.</article>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div id="help-modal" class="help-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+      <div class="help-modal-card">
+        <div class="help-modal-header">
+          <h2 id="help-modal-title">Справка</h2>
+          <button id="help-close" type="button" class="help-close" aria-label="Закрыть справку">×</button>
+        </div>
+        <div class="help-modal-content">
+          <p>Обозреватель Технической Документации поддерживает быстрый сценарий работы:</p>
+          <ol>
+            <li>Перейдите во вкладку Библиотека.</li>
+            <li>Введите запрос в поле поиска и нажмите кнопку поиска.</li>
+            <li>Откройте документ из списка результатов или Recently Opened Libraries.</li>
+          </ol>
+          <p>Полезные вкладки:</p>
+          <ul>
+            <li>Домой: стартовая страница.</li>
+            <li>Справочник: словарь терминов.</li>
+            <li>Моя Коллекция: личная подборка.</li>
+            <li>Мои Документы: сохраненные документы и заметки.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div id="auth-modal" class="help-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+      <div class="help-modal-card auth-modal-card">
+        <div class="help-modal-header">
+          <h2 id="auth-modal-title">Вход в программу</h2>
+          <button id="auth-close" type="button" class="help-close" aria-label="Закрыть окно входа">×</button>
+        </div>
+        <div class="auth-method-tabs" role="tablist" aria-label="Способ входа">
+          <button type="button" class="auth-method-tab active" data-auth-method="password" role="tab" aria-selected="true">Логин и Пароль</button>
+          <button type="button" class="auth-method-tab" data-auth-method="sms" role="tab" aria-selected="false">СМС по номеру</button>
+          <button type="button" class="auth-method-tab" data-auth-method="qr" role="tab" aria-selected="false">QR Code</button>
+        </div>
+        <div class="help-modal-content">
+          <section class="auth-method-view" data-auth-view="password">
+            <label class="auth-field-label" for="login-value">Логин</label>
+            <input id="login-value" class="auth-input" type="text" placeholder="Введите логин" />
+            <label class="auth-field-label" for="password-value">Пароль</label>
+            <input id="password-value" class="auth-input" type="password" placeholder="Введите пароль" />
+            <button id="auth-password-submit" type="button" class="auth-submit">Войти</button>
+          </section>
+
+          <section class="auth-method-view is-hidden" data-auth-view="sms">
+            <label class="auth-field-label" for="phone-value">Номер телефона</label>
+            <input id="phone-value" class="auth-input" type="tel" placeholder="+7 (___) ___-__-__" />
+            <label class="auth-field-label" for="sms-code-value">Код из СМС</label>
+            <input id="sms-code-value" class="auth-input" type="text" placeholder="Введите код подтверждения" />
+            <div class="auth-actions-row">
+              <button id="auth-sms-send" type="button" class="auth-secondary">Получить код</button>
+              <button id="auth-sms-verify" type="button" class="auth-submit">Подтвердить</button>
+            </div>
+          </section>
+
+          <section class="auth-method-view is-hidden" data-auth-view="qr">
+            <p>Откройте мобильное приложение и отсканируйте QR Code для входа:</p>
+            <div class="qr-placeholder" aria-label="QR Code">
+              <img id="qr-image" class="qr-image is-hidden" alt="QR Code для входа" />
+              <span id="qr-fallback">QR</span>
+            </div>
+            <div class="auth-actions-row">
+              <button id="auth-qr-refresh" type="button" class="auth-secondary">Обновить QR</button>
+              <button id="auth-qr-confirm" type="button" class="auth-submit">Подтвердить сканирование</button>
+            </div>
+            <p class="empty-state">После сканирования вход будет подтвержден автоматически.</p>
+          </section>
+
+          <p id="auth-feedback" class="auth-feedback empty-state">Выберите способ входа и выполните шаги авторизации.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="register-modal" class="help-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="register-modal-title">
+      <div class="help-modal-card auth-modal-card">
+        <div class="help-modal-header">
+          <h2 id="register-modal-title">Регистрация</h2>
+          <button id="register-close" type="button" class="help-close" aria-label="Закрыть окно регистрации">×</button>
+        </div>
+        <div class="help-modal-content">
+          <label class="auth-field-label" for="register-login">Логин</label>
+          <input id="register-login" class="auth-input" type="text" placeholder="Придумайте логин" />
+
+          <label class="auth-field-label" for="register-password">Пароль (минимум 8 символов)</label>
+          <input id="register-password" class="auth-input" type="password" placeholder="Придумайте сложный пароль" />
+
+          <label class="auth-field-label" for="register-contact-mode">Канал подтверждения</label>
+          <select id="register-contact-mode" class="auth-input">
+            <option value="phone">Номер телефона</option>
+            <option value="email">Электронная почта</option>
+          </select>
+
+          <label class="auth-field-label" for="register-phone">Номер телефона</label>
+          <input id="register-phone" class="auth-input" type="tel" placeholder="+7 (___) ___-__-__" />
+
+          <label class="auth-field-label is-hidden" for="register-email" id="register-email-label">Электронная почта</label>
+          <input id="register-email" class="auth-input is-hidden" type="email" placeholder="name@example.com" />
+
+          <div class="auth-actions-row">
+            <button id="register-validate" type="button" class="auth-secondary">Проверить данные</button>
+            <button id="register-send-code" type="button" class="auth-submit">Получить код</button>
+          </div>
+
+          <label class="auth-field-label" for="register-code">Код подтверждения</label>
+          <input id="register-code" class="auth-input" type="text" placeholder="Введите код" />
+
+          <button id="register-confirm" type="button" class="auth-submit">Завершить регистрацию</button>
+          <p id="register-feedback" class="auth-feedback empty-state">Заполните форму, получите код и подтвердите регистрацию.</p>
+        </div>
+      </div>
+    </div>
+
+    <script src="/assets/app.js?v=5"></script>
+  </body>
+</html>

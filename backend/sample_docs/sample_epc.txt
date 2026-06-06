@@ -1,0 +1,4 @@
+Ericsson EPC Mobility Management Guide
+
+This documentation explains paging, handover, and session continuity in the EPC core network.
+It describes the role of MME, SGW, and PGW, along with S1-MME and GTP-C procedures.
