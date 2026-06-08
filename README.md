@@ -164,7 +164,7 @@ npm install
 npm run dev
 ```
 
-Клиент будет доступен по адресу: http://localhost:3000
+Клиент будет доступен по адресу: <http://localhost:3000>
 
 Клиент использует встроенные Next.js proxy маршруты для backend API:
 
@@ -183,9 +183,9 @@ npm run dev
 
 ### 8. Проверка документации API
 
-- Swagger UI: http://localhost:8000/docs
-- Проверка состояния сервиса: http://localhost:8000/health
-- Стартовый интерфейс дерева и чтения: http://localhost:8000/
+- Swagger UI: <http://localhost:8000/docs>
+- Проверка состояния сервиса: <http://localhost:8000/health>
+- Стартовый интерфейс дерева и чтения: <http://localhost:8000/>
 
 Примечание:
 
@@ -213,9 +213,11 @@ npm run dev
 - GET /health - состояние сервиса
 - POST /api/v1/search - полнотекстовый поиск и фасетная фильтрация
 - GET /api/v1/metrics/kpi - KPI метрики (количество документов, p95 задержки поиска, число замеров)
+- GET /api/v1/metrics/panels - панели мониторинга (ошибки, задержки, пропускная способность)
+- GET /api/v1/metrics/hotspots - список узких мест по стадиям (avg/p95)
 - GET /api/v1/documents/tree - дерево документации (продукт/версия/домен/тема)
 - GET /api/v1/documents/{doc_id} - чтение документа и его чанков
-- POST /api/v1/documents/upload - загрузка и индексация документа
+- POST /api/v1/documents/upload - загрузка и индексация документа (поддерживает `X-Idempotency-Key`)
 - POST /api/v1/documents/package-gotd - упаковка библиотеки `.gotd` из стандартных файлов
 - POST /api/v1/ai/ask - контракт ответа искусственного интеллекта с привязкой к источникам
 - POST /api/v1/ai/feedback - пользовательская оценка ответа AI (`like`/`dislike`) с привязкой к `trace_id`
@@ -233,6 +235,7 @@ npm run dev
 - PATCH /api/v1/admin/users/{login} - обновление пользователя, только для роли `admin`
 - DELETE /api/v1/admin/users/{login} - удаление пользователя, только для роли `admin`
 - GET /api/v1/admin/audit - журнал административных действий, только для роли `admin`
+- GET /api/v1/admin/audit/ai - журнал ответов AI, только для роли `admin`
 
 ### Фаза 4: легкая ролевая модель и аудит
 
@@ -240,14 +243,29 @@ npm run dev
 - Роль `admin` по умолчанию назначена учетной записи `admin`.
 - Административные операции требуют заголовок `Authorization: Bearer <token>` и проверяют роль `admin`.
 - Создание, обновление и удаление пользователей пишутся в `admin_audit_log`.
+- Каждый ответ AI пишет аудит-событие в `ai_answer_audit_log`.
+- Загрузка документов поддерживает идемпотентность через `X-Idempotency-Key`.
+- Индексация при загрузке выполняется с повторными попытками при временных сбоях OpenSearch.
+- Добавлена метрика-панель `GET /api/v1/metrics/panels`.
+
+### Операционная инструкция (backup/restore)
+
+- Документ runbook: `OPERATIONS_BACKUP_RESTORE.md`.
+
+### Фаза 5: оптимизация производительности
+
+- Поиск использует гибридное ранжирование с повторным rerank по coverage/metadata признакам.
+- Метрики узких мест доступны через `GET /api/v1/metrics/hotspots`.
+- Автоматизированный gate-чек для этапа оптимизации: `python scripts/phase5_gate.py`.
+- Решение по миграции upload-воркеров на Go и CPU-парсинга на C++ принимается по порогам p95 в `phase5_gate.py`.
 
 Пример ответа для `GET /api/v1/metrics/kpi`:
 
 ```json
 {
-	"indexed_documents_total": 0,
-	"search_latency_p95_ms": 0.0,
-	"search_samples": 0
+  "indexed_documents_total": 0,
+  "search_latency_p95_ms": 0.0,
+  "search_samples": 0
 }
 ```
 

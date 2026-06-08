@@ -80,7 +80,7 @@ class TokenPrincipal:
     expires_at: datetime
 
 
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
 _SMS_CHALLENGES: dict[str, SmsChallenge] = {}
 _QR_SESSIONS: dict[str, QrSession] = {}
 _ACCESS_TOKENS: dict[str, TokenPrincipal] = {}

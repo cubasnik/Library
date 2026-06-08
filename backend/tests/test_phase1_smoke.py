@@ -765,3 +765,165 @@ def test_admin_rbac_and_audit_log_flow(tmp_path: Path) -> None:
 
     app.dependency_overrides.clear()
     settings.storage_db_path = original_db_path
+
+
+def test_upload_idempotency_replay(tmp_path: Path) -> None:
+    fake_client = FakeOpenSearch()
+    original_db_path = _set_test_db(tmp_path)
+    app.dependency_overrides[get_opensearch_client] = lambda: fake_client
+
+    with TestClient(app) as client:
+        client.post("/api/v1/documents/index/bootstrap")
+
+        first_response = client.post(
+            "/api/v1/documents/upload",
+            files={"file": ("sample_epc.txt", _load_sample("sample_epc.txt"), "text/plain")},
+            data={
+                "title": "Ericsson EPC Mobility Management Guide",
+                "product": "Ericsson Packet Core",
+                "vendor": "Ericsson",
+                "domain": "epc",
+                "release": "R16",
+            },
+            headers={"X-Idempotency-Key": "upload-same-doc"},
+        )
+        assert first_response.status_code == 200
+        first_payload = first_response.json()
+        assert first_payload["idempotent_replay"] is False
+        assert first_payload["idempotency_key"] == "custom:upload-same-doc"
+
+        second_response = client.post(
+            "/api/v1/documents/upload",
+            files={"file": ("sample_epc.txt", _load_sample("sample_epc.txt"), "text/plain")},
+            data={
+                "title": "Ericsson EPC Mobility Management Guide",
+                "product": "Ericsson Packet Core",
+                "vendor": "Ericsson",
+                "domain": "epc",
+                "release": "R16",
+            },
+            headers={"X-Idempotency-Key": "upload-same-doc"},
+        )
+        assert second_response.status_code == 200
+        second_payload = second_response.json()
+        assert second_payload["idempotent_replay"] is True
+        assert second_payload["doc_id"] == first_payload["doc_id"]
+        assert second_payload["chunks_indexed"] == first_payload["chunks_indexed"]
+
+    app.dependency_overrides.clear()
+    settings.storage_db_path = original_db_path
+
+
+def test_ai_audit_and_monitoring_panels(tmp_path: Path) -> None:
+    fake_client = FakeOpenSearch()
+    original_db_path = _set_test_db(tmp_path)
+    app.dependency_overrides[get_opensearch_client] = lambda: fake_client
+
+    with TestClient(app) as client:
+        client.post("/api/v1/documents/index/bootstrap")
+        upload_response = client.post(
+            "/api/v1/documents/upload",
+            files={"file": ("sample_epc.txt", _load_sample("sample_epc.txt"), "text/plain")},
+            data={
+                "title": "Ericsson EPC Mobility Management Guide",
+                "product": "Ericsson Packet Core",
+                "vendor": "Ericsson",
+                "domain": "epc",
+                "release": "R16",
+            },
+            headers={"X-Idempotency-Key": "panel-upload"},
+        )
+        assert upload_response.status_code == 200
+        uploaded_doc_id = upload_response.json()["doc_id"]
+
+        ai_response = client.post(
+            "/api/v1/ai/ask",
+            json={
+                "question": "paging",
+                "context_doc_ids": [uploaded_doc_id],
+                "max_citations": 3,
+                "mode": "explain",
+            },
+        )
+        assert ai_response.status_code == 200
+        trace_id = ai_response.json()["trace_id"]
+
+        admin_login_response = client.post(
+            "/api/v1/auth/login/password",
+            json={"login": "admin", "password": "admin123"},
+        )
+        assert admin_login_response.status_code == 200
+        admin_headers = {"Authorization": f"Bearer {admin_login_response.json()['access_token']}"}
+
+        ai_audit_response = client.get("/api/v1/admin/audit/ai?limit=20", headers=admin_headers)
+        assert ai_audit_response.status_code == 200
+        ai_audit_items = ai_audit_response.json()
+        assert any(item["trace_id"] == trace_id for item in ai_audit_items)
+
+        panels_response = client.get("/api/v1/metrics/panels")
+        assert panels_response.status_code == 200
+        panels_payload = panels_response.json()
+        assert "error_counts" in panels_payload
+        assert panels_payload["upload_success"] >= 1
+        assert panels_payload["search_latency_p95_ms"] >= 0.0
+        assert panels_payload["ai_latency_p95_ms"] >= 0.0
+
+        hotspots_response = client.get("/api/v1/metrics/hotspots")
+        assert hotspots_response.status_code == 200
+        hotspots_payload = hotspots_response.json()
+        assert "generated_at" in hotspots_payload
+        assert isinstance(hotspots_payload["hotspots"], list)
+        hotspot_stages = {item["stage"] for item in hotspots_payload["hotspots"]}
+        assert "upload.index-and-store" in hotspot_stages
+        assert "upload.chunking" in hotspot_stages
+
+    app.dependency_overrides.clear()
+    settings.storage_db_path = original_db_path
+
+
+def test_hybrid_rerank_prefers_title_match(tmp_path: Path) -> None:
+    fake_client = FakeOpenSearch()
+    original_db_path = _set_test_db(tmp_path)
+    app.dependency_overrides[get_opensearch_client] = lambda: fake_client
+
+    with TestClient(app) as client:
+        client.post("/api/v1/documents/index/bootstrap")
+
+        title_match = client.post(
+            "/api/v1/documents/upload",
+            files={"file": ("core_title.txt", b"AMF registration and paging workflow", "text/plain")},
+            data={
+                "title": "AMF registration guide",
+                "product": "Core A",
+                "vendor": "VendorA",
+                "domain": "5gc",
+                "release": "R17",
+            },
+        )
+        assert title_match.status_code == 200
+
+        content_match = client.post(
+            "/api/v1/documents/upload",
+            files={"file": ("core_content.txt", b"This document mentions AMF registration in details.", "text/plain")},
+            data={
+                "title": "Generic core notes",
+                "product": "Core B",
+                "vendor": "VendorB",
+                "domain": "5gc",
+                "release": "R17",
+            },
+        )
+        assert content_match.status_code == 200
+
+        search_response = client.post(
+            "/api/v1/search",
+            json={"query": "AMF registration", "page": 1, "size": 10, "filters": {}},
+        )
+        assert search_response.status_code == 200
+        search_payload = search_response.json()
+        assert search_payload["total"] >= 2
+        assert search_payload["hits"][0]["title"] == "AMF registration guide"
+        assert search_payload["hits"][0]["score"] >= search_payload["hits"][1]["score"]
+
+    app.dependency_overrides.clear()
+    settings.storage_db_path = original_db_path

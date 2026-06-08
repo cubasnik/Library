@@ -98,6 +98,8 @@ class DocumentUploadResponse(BaseModel):
     source_format: str
     library_items: int | None = None
     ingested_document_ids: list[str] | None = None
+    idempotency_key: str | None = None
+    idempotent_replay: bool = False
 
 
 class IndexBootstrapResponse(BaseModel):
@@ -281,3 +283,40 @@ class KpiResponse(BaseModel):
     indexed_documents_total: int
     search_latency_p95_ms: float
     search_samples: int
+
+
+class MonitoringPanelsResponse(BaseModel):
+    error_counts: dict[str, int] = Field(default_factory=dict)
+    search_latency_p95_ms: float
+    ai_latency_p95_ms: float
+    search_samples: int
+    ai_samples: int
+    upload_success: int
+    upload_failures: int
+    upload_docs_per_min: float
+    upload_chunks_per_min: float
+
+
+class HotspotRecord(BaseModel):
+    stage: str
+    count: int
+    avg_ms: float
+    p95_ms: float
+
+
+class HotspotsResponse(BaseModel):
+    generated_at: str
+    hotspots: list[HotspotRecord] = Field(default_factory=list)
+
+
+class AiAuditRecord(BaseModel):
+    audit_id: str
+    trace_id: str
+    mode: str
+    question: str
+    blocked: bool
+    confidence: float
+    citations_count: int
+    status: str
+    error_message: str | None = None
+    created_at: str

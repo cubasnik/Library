@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
 import re
+import time
 import uuid
 import zipfile
 
@@ -22,8 +24,11 @@ from app.schemas import (
     DocumentUploadResponse,
     IndexBootstrapResponse,
 )
+from app.services.metrics_service import record_stage_timing
 from app.services.storage_service import get_document as get_stored_document
 from app.services.storage_service import get_document_tree as get_stored_document_tree
+from app.services.storage_service import get_idempotent_upload_result
+from app.services.storage_service import save_idempotent_upload_result
 from app.services.storage_service import save_document
 
 
@@ -51,6 +56,9 @@ INDEX_MAPPING = {
     },
 }
 
+_INDEX_RETRY_MAX_ATTEMPTS = 3
+_INDEX_RETRY_BASE_DELAY_SECONDS = 0.2
+
 def bootstrap_index(client: OpenSearch) -> IndexBootstrapResponse:
     created = False
     if not client.indices.exists(index=settings.opensearch_index):
@@ -65,26 +73,37 @@ def _detect_source_format(filename: str) -> str:
 
 
 def _extract_text_from_file(filename: str, content: bytes) -> str:
+    started_at = time.perf_counter()
     source_format = _detect_source_format(filename)
 
     if source_format == "pdf":
         reader = PdfReader(BytesIO(content))
         pages = [page.extract_text() or "" for page in reader.pages]
-        return "\n".join(pages)
+        result = "\n".join(pages)
+        record_stage_timing("upload.parse.pdf", (time.perf_counter() - started_at) * 1000.0)
+        return result
 
     if source_format in {"docx", "doc"}:
         try:
             document = DocxDocument(BytesIO(content))
-            return "\n".join(paragraph.text for paragraph in document.paragraphs)
+            result = "\n".join(paragraph.text for paragraph in document.paragraphs)
+            record_stage_timing("upload.parse.docx", (time.perf_counter() - started_at) * 1000.0)
+            return result
         except Exception:
             # Legacy .doc is not natively supported by python-docx; fallback to plain decode.
-            return content.decode("utf-8", errors="ignore")
+            result = content.decode("utf-8", errors="ignore")
+            record_stage_timing("upload.parse.doc-fallback", (time.perf_counter() - started_at) * 1000.0)
+            return result
 
     if source_format in {"html", "htm"}:
         soup = BeautifulSoup(content, "lxml")
-        return soup.get_text("\n")
+        result = soup.get_text("\n")
+        record_stage_timing("upload.parse.html", (time.perf_counter() - started_at) * 1000.0)
+        return result
 
-    return content.decode("utf-8", errors="ignore")
+    result = content.decode("utf-8", errors="ignore")
+    record_stage_timing("upload.parse.text", (time.perf_counter() - started_at) * 1000.0)
+    return result
 
 
 def _normalize_text(text: str) -> str:
@@ -123,6 +142,7 @@ def _derive_title(text: str, fallback: str) -> str:
 
 
 def _chunk_text(text: str, chunk_size: int = 1200, overlap: int = 150) -> list[str]:
+    started_at = time.perf_counter()
     if not text:
         return []
 
@@ -158,6 +178,7 @@ def _chunk_text(text: str, chunk_size: int = 1200, overlap: int = 150) -> list[s
     if current_chunk:
         chunks.append(current_chunk.strip())
 
+    record_stage_timing("upload.chunking", (time.perf_counter() - started_at) * 1000.0)
     return chunks
 
 
@@ -196,6 +217,7 @@ def _index_and_store_document(
     metadata: DocumentMetadata,
     chunks: list[str],
 ) -> tuple[str, int]:
+    started_at = time.perf_counter()
     doc_id = str(uuid.uuid4())
     chunk_records = _build_chunk_records(doc_id=doc_id, source_format=source_format, chunks=chunks, metadata=metadata)
 
@@ -205,7 +227,7 @@ def _index_and_store_document(
         bulk_actions.append({**chunk_record.model_dump(), "product": metadata.product})
 
     if bulk_actions:
-        client.bulk(body=bulk_actions, refresh=True)
+        _bulk_index_with_retry(client=client, bulk_actions=bulk_actions)
 
     document_record = DocumentRecord(
         doc_id=doc_id,
@@ -216,7 +238,62 @@ def _index_and_store_document(
         chunks=chunk_records,
     )
     save_document(document_record)
+    record_stage_timing("upload.index-and-store", (time.perf_counter() - started_at) * 1000.0)
     return doc_id, len(chunk_records)
+
+
+def _bulk_index_with_retry(*, client: OpenSearch, bulk_actions: list[dict]) -> None:
+    last_error: Exception | None = None
+    for attempt in range(1, _INDEX_RETRY_MAX_ATTEMPTS + 1):
+        try:
+            started_at = time.perf_counter()
+            client.bulk(body=bulk_actions, refresh=True)
+            record_stage_timing("upload.bulk-index.attempt", (time.perf_counter() - started_at) * 1000.0)
+            return
+        except Exception as exc:  # pragma: no cover - covered by integration behavior
+            last_error = exc
+            if attempt >= _INDEX_RETRY_MAX_ATTEMPTS:
+                break
+            time.sleep(_INDEX_RETRY_BASE_DELAY_SECONDS * attempt)
+    raise RuntimeError("Индексация чанков завершилась неуспешно после повторов") from last_error
+
+
+def _build_upload_request_key(
+    *,
+    filename: str,
+    raw_content: bytes,
+    title: str,
+    product: str | None,
+    source_path: str | None,
+    language: str | None,
+    vendor: str | None,
+    domain: str | None,
+    release: str | None,
+    node_type: str | None,
+    interface: str | None,
+    protocol: str | None,
+    idempotency_key: str | None,
+) -> str:
+    normalized_idempotency_key = (idempotency_key or "").strip()
+    if normalized_idempotency_key:
+        return f"custom:{normalized_idempotency_key}"
+
+    descriptor = {
+        "filename": filename,
+        "title": title,
+        "product": product,
+        "source_path": source_path,
+        "language": language,
+        "vendor": vendor,
+        "domain": domain,
+        "release": release,
+        "node_type": node_type,
+        "interface": interface,
+        "protocol": protocol,
+        "content_sha256": hashlib.sha256(raw_content).hexdigest(),
+    }
+    digest = hashlib.sha256(json.dumps(descriptor, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return f"auto:{digest}"
 
 
 def _ingest_single_from_bytes(
@@ -463,12 +540,34 @@ def ingest_document(
     node_type: str | None = None,
     interface: str | None = None,
     protocol: str | None = None,
+    idempotency_key: str | None = None,
 ) -> DocumentUploadResponse:
     raw_content = file.file.read()
-    source_format = _detect_source_format(file.filename or title)
+    filename = file.filename or title
+    request_key = _build_upload_request_key(
+        filename=filename,
+        raw_content=raw_content,
+        title=title,
+        product=product,
+        source_path=source_path,
+        language=language,
+        vendor=vendor,
+        domain=domain,
+        release=release,
+        node_type=node_type,
+        interface=interface,
+        protocol=protocol,
+        idempotency_key=idempotency_key,
+    )
+
+    existing = get_idempotent_upload_result(request_key)
+    if existing is not None:
+        return existing
+
+    source_format = _detect_source_format(filename)
 
     if source_format == "gotd":
-        return ingest_gotd_library(
+        response = ingest_gotd_library(
             client=client,
             archive_bytes=raw_content,
             title=title,
@@ -482,10 +581,14 @@ def ingest_document(
             interface=interface,
             protocol=protocol,
         )
+        response.idempotency_key = request_key
+        response.idempotent_replay = False
+        save_idempotent_upload_result(request_key, response)
+        return response
 
     doc_id, chunks_count, source_format, metadata = _ingest_single_from_bytes(
         client=client,
-        filename=file.filename or title,
+        filename=filename,
         raw_content=raw_content,
         title=title,
         product=product,
@@ -499,12 +602,16 @@ def ingest_document(
         protocol=protocol,
     )
 
-    return DocumentUploadResponse(
+    response = DocumentUploadResponse(
         doc_id=doc_id,
         title=metadata.title,
         chunks_indexed=chunks_count,
         source_format=source_format,
+        idempotency_key=request_key,
+        idempotent_replay=False,
     )
+    save_idempotent_upload_result(request_key, response)
+    return response
 
 
 def get_document(doc_id: str) -> DocumentRecord | None:

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import Response
+from datetime import datetime, timezone
 import logging
 import time
 from opensearchpy import OpenSearch
@@ -9,6 +10,7 @@ from app.schemas import (
     AdminUserDeleteResponse,
     AdminUserRecord,
     AdminUserUpdateRequest,
+    AiAuditRecord,
     AiFeedbackRequest,
     AiFeedbackResponse,
     AiAskRequest,
@@ -19,6 +21,9 @@ from app.schemas import (
     DocumentUploadResponse,
     IndexBootstrapResponse,
     KpiResponse,
+    HotspotRecord,
+    HotspotsResponse,
+    MonitoringPanelsResponse,
     PasswordLoginRequest,
     RegistrationConfirmRequest,
     RegistrationStartRequest,
@@ -61,14 +66,30 @@ from app.services.document_service import (
     ingest_document,
 )
 from app.services.metrics_service import (
+    get_ai_latency_p95_ms,
+    get_ai_samples_count,
+    get_error_counts,
     get_indexed_documents_total,
     get_search_latency_p95_ms,
     get_search_samples_count,
+    get_hotspot_stats,
+    get_upload_counters,
+    get_upload_throughput_per_min,
+    record_ai_latency_ms,
+    record_error,
+    record_upload_event,
     record_search_latency_ms,
+    record_stage_timing,
 )
 from app.services.opensearch_client import get_opensearch_client
 from app.services.search_service import search_docs
-from app.services.storage_service import get_admin_audit_events, save_admin_audit_event, save_ai_feedback
+from app.services.storage_service import (
+    get_admin_audit_events,
+    get_ai_answer_audit_events,
+    save_admin_audit_event,
+    save_ai_answer_audit_event,
+    save_ai_feedback,
+)
 
 
 router = APIRouter(tags=["api"])
@@ -101,9 +122,14 @@ def require_admin_principal(principal: TokenPrincipal = Depends(require_authenti
 @router.post("/search", response_model=SearchResponse)
 def search(payload: SearchRequest, client: OpenSearch = Depends(get_opensearch_client)) -> SearchResponse:
     started_at = time.perf_counter()
-    result = search_docs(client=client, payload=payload)
+    try:
+        result = search_docs(client=client, payload=payload)
+    except Exception as exc:  # pragma: no cover
+        record_error("search_failure")
+        raise HTTPException(status_code=503, detail="Search service temporarily unavailable") from exc
     latency_ms = (time.perf_counter() - started_at) * 1000.0
     record_search_latency_ms(latency_ms)
+    record_stage_timing("search.total", latency_ms)
     logger.info(
         "search_request query=%r page=%s size=%s total_hits=%s latency_ms=%.2f",
         payload.query,
@@ -133,10 +159,11 @@ def upload_document(
     node_type: str | None = Form(default=None),
     interface: str | None = Form(default=None),
     protocol: str | None = Form(default=None),
+    idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
     client: OpenSearch = Depends(get_opensearch_client),
 ) -> DocumentUploadResponse:
     try:
-        return ingest_document(
+        result = ingest_document(
             client=client,
             file=file,
             title=title,
@@ -149,9 +176,19 @@ def upload_document(
             node_type=node_type,
             interface=interface,
             protocol=protocol,
+            idempotency_key=idempotency_key,
         )
+        docs_count = len(result.ingested_document_ids or [result.doc_id])
+        record_upload_event(success=True, docs=docs_count, chunks=result.chunks_indexed)
+        return result
     except ValueError as exc:
+        record_upload_event(success=False, docs=0, chunks=0)
+        record_error("upload_validation")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        record_upload_event(success=False, docs=0, chunks=0)
+        record_error("upload_indexing")
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/documents/package-gotd")
@@ -203,8 +240,25 @@ def read_document(doc_id: str) -> DocumentRecord:
 @router.post("/ai/ask", response_model=AiAskResponse)
 def ai_ask(payload: AiAskRequest, client: OpenSearch = Depends(get_opensearch_client)) -> AiAskResponse:
     started_at = time.perf_counter()
-    result = ask_ai(payload, client)
+    try:
+        result = ask_ai(payload, client)
+    except Exception as exc:  # pragma: no cover
+        record_error("ai_unhandled")
+        raise HTTPException(status_code=500, detail="AI request processing failed") from exc
     latency_ms = (time.perf_counter() - started_at) * 1000.0
+    record_ai_latency_ms(latency_ms)
+    save_ai_answer_audit_event(
+        trace_id=result.trace_id,
+        mode=payload.mode,
+        question=payload.question,
+        blocked=result.blocked,
+        confidence=result.confidence,
+        citations_count=len(result.citations),
+        status="success" if not result.blocked else "blocked",
+        error_message=None,
+    )
+    if result.blocked:
+        record_error("ai_blocked_no_citations")
     logger.info(
         "ai_request mode=%s question_len=%s citations=%s confidence=%.2f blocked=%s trace_id=%s context_doc_ids=%s latency_ms=%.2f",
         payload.mode,
@@ -242,6 +296,30 @@ def metrics_kpi() -> KpiResponse:
         indexed_documents_total=get_indexed_documents_total(),
         search_latency_p95_ms=get_search_latency_p95_ms(),
         search_samples=get_search_samples_count(),
+    )
+
+
+@router.get("/metrics/panels", response_model=MonitoringPanelsResponse)
+def metrics_panels() -> MonitoringPanelsResponse:
+    upload_success, upload_failures = get_upload_counters()
+    upload_docs_per_min, upload_chunks_per_min = get_upload_throughput_per_min()
+    return MonitoringPanelsResponse(
+        error_counts=get_error_counts(),
+        search_latency_p95_ms=get_search_latency_p95_ms(),
+        ai_latency_p95_ms=get_ai_latency_p95_ms(),
+        search_samples=get_search_samples_count(),
+        ai_samples=get_ai_samples_count(),
+        upload_success=upload_success,
+        upload_failures=upload_failures,
+        upload_docs_per_min=upload_docs_per_min,
+        upload_chunks_per_min=upload_chunks_per_min,
+    )
+
+@router.get("/metrics/hotspots", response_model=HotspotsResponse)
+def metrics_hotspots() -> HotspotsResponse:
+    return HotspotsResponse(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        hotspots=[HotspotRecord(**item) for item in get_hotspot_stats()[:20]],
     )
 
 
@@ -432,3 +510,11 @@ def admin_read_audit_log(
     _: TokenPrincipal = Depends(require_admin_principal),
 ) -> list[dict]:
     return get_admin_audit_events(limit=limit)
+
+
+@router.get("/admin/audit/ai", response_model=list[AiAuditRecord])
+def admin_read_ai_audit_log(
+    limit: int = 100,
+    _: TokenPrincipal = Depends(require_admin_principal),
+) -> list[AiAuditRecord]:
+    return get_ai_answer_audit_events(limit=limit)
