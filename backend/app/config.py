@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     opensearch_index: str = Field(default="telecom_docs_v1", alias="OPENSEARCH_INDEX")
     opensearch_username: str = Field(default="", alias="OPENSEARCH_USERNAME")
     opensearch_password: str = Field(default="", alias="OPENSEARCH_PASSWORD")
+    google_search_api_key: str = Field(default="", alias="GOOGLE_SEARCH_API_KEY")
+    google_search_cx: str = Field(default="", alias="GOOGLE_SEARCH_CX")
     storage_db_path: str = Field(
         default=str(Path(__file__).resolve().parents[1] / "data" / "library.db"),
         alias="STORAGE_DB_PATH",

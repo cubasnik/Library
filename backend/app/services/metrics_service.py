@@ -32,6 +32,26 @@ def get_search_latency_p95_ms() -> float:
     return round(values[rank - 1], 2)
 
 
+def get_search_latency_p50_ms() -> float:
+    with _LOCK:
+        values = list(_SEARCH_LATENCY_MS)
+    if not values:
+        return 0.0
+    values.sort()
+    rank = max(1, math.ceil(0.50 * len(values)))
+    return round(values[rank - 1], 2)
+
+
+def get_search_latency_p99_ms() -> float:
+    with _LOCK:
+        values = list(_SEARCH_LATENCY_MS)
+    if not values:
+        return 0.0
+    values.sort()
+    rank = max(1, math.ceil(0.99 * len(values)))
+    return round(values[rank - 1], 2)
+
+
 def get_search_samples_count() -> int:
     with _LOCK:
         return len(_SEARCH_LATENCY_MS)
@@ -93,6 +113,11 @@ def get_upload_throughput_per_min(window_seconds: int = 300) -> tuple[float, flo
     docs_total = sum(event["docs"] for event in events if event["success"])
     chunks_total = sum(event["chunks"] for event in events if event["success"])
     return round(docs_total / minutes, 2), round(chunks_total / minutes, 2)
+
+
+def get_upload_docs_per_hour(window_seconds: int = 3600) -> float:
+    docs_per_min, _ = get_upload_throughput_per_min(window_seconds=window_seconds)
+    return round(docs_per_min * 60.0, 2)
 
 
 def record_error(error_type: str) -> None:

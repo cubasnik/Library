@@ -553,10 +553,51 @@ def test_metrics_kpi_endpoint_smoke(tmp_path: Path) -> None:
 
         payload = response.json()
         assert payload["indexed_documents_total"] == 0
+        assert isinstance(payload["search_latency_p50_ms"], float)
+        assert payload["search_latency_p50_ms"] >= 0.0
         assert isinstance(payload["search_latency_p95_ms"], float)
         assert payload["search_latency_p95_ms"] >= 0.0
+        assert isinstance(payload["search_latency_p99_ms"], float)
+        assert payload["search_latency_p99_ms"] >= 0.0
         assert isinstance(payload["search_samples"], int)
         assert payload["search_samples"] >= 0
+        assert isinstance(payload["upload_docs_per_hour"], float)
+        assert payload["upload_docs_per_hour"] >= 0.0
+        assert isinstance(payload["valid_citations_rate"], float)
+        assert 0.0 <= payload["valid_citations_rate"] <= 1.0
+
+    app.dependency_overrides.clear()
+    settings.storage_db_path = original_db_path
+
+
+def test_task_success_rate_endpoint(tmp_path: Path) -> None:
+    fake_client = FakeOpenSearch()
+    original_db_path = _set_test_db(tmp_path)
+    app.dependency_overrides[get_opensearch_client] = lambda: fake_client
+
+    with TestClient(app) as client:
+        track_success = client.post(
+            "/api/v1/tasks/track",
+            json={"task_name": "upload_document", "success": True, "duration_seconds": 2.4},
+        )
+        assert track_success.status_code == 200
+        assert track_success.json()["saved"] is True
+        assert track_success.json()["event_id"]
+
+        track_failure = client.post(
+            "/api/v1/tasks/track",
+            json={"task_name": "upload_document", "success": False, "duration_seconds": 5.6},
+        )
+        assert track_failure.status_code == 200
+
+        metrics_response = client.get("/api/v1/metrics/task-success?window_hours=24")
+        assert metrics_response.status_code == 200
+        payload = metrics_response.json()
+
+        assert payload["samples"] == 2
+        assert payload["window_hours"] == 24
+        assert payload["task_success_rate"] == 0.5
+        assert payload["avg_time_to_success_seconds"] == 2.4
 
     app.dependency_overrides.clear()
     settings.storage_db_path = original_db_path
@@ -762,6 +803,131 @@ def test_admin_rbac_and_audit_log_flow(tmp_path: Path) -> None:
         storage_audit = get_admin_audit_events(limit=20)
         assert any(item["action"] == "admin.user.create" and item["status"] == "success" for item in storage_audit)
         assert any(item["action"] == "admin.user.delete" and item["status"] == "success" for item in storage_audit)
+
+    app.dependency_overrides.clear()
+    settings.storage_db_path = original_db_path
+
+
+def test_glossary_api_public_read_and_admin_crud(tmp_path: Path) -> None:
+    fake_client = FakeOpenSearch()
+    original_db_path = _set_test_db(tmp_path)
+    app.dependency_overrides[get_opensearch_client] = lambda: fake_client
+
+    with TestClient(app) as client:
+        public_response = client.get("/api/v1/glossary")
+        assert public_response.status_code == 200
+        public_payload = public_response.json()
+        assert isinstance(public_payload, list)
+        assert public_payload[0]["abbr"] == "AMF"
+
+        unauthorized_create = client.post(
+            "/api/v1/glossary",
+            json={
+                "abbr": "ZZTMP",
+                "term_ru": "Временный термин",
+                "term_en": "Temporary term",
+                "definition_ru": "Описание",
+                "definition_en": "Description",
+                "related": [],
+                "keywords": [],
+                "manual_sources": [],
+            },
+        )
+        assert unauthorized_create.status_code == 401
+
+        user_login = client.post(
+            "/api/v1/auth/login/password",
+            json={"login": "phase4_user", "password": "Phase4Pass1"},
+        )
+        if user_login.status_code != 200:
+            admin_login = client.post(
+                "/api/v1/auth/login/password",
+                json={"login": "admin", "password": "admin123"},
+            )
+            admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+            create_user_response = client.post(
+                "/api/v1/admin/users",
+                json={
+                    "login": "phase4_user",
+                    "password": "Phase4Pass1",
+                    "role": "user",
+                    "display_name": "Phase 4 User",
+                },
+                headers=admin_headers,
+            )
+            assert create_user_response.status_code == 200
+            user_login = client.post(
+                "/api/v1/auth/login/password",
+                json={"login": "phase4_user", "password": "Phase4Pass1"},
+            )
+
+        user_headers = {"Authorization": f"Bearer {user_login.json()['access_token']}"}
+        forbidden_create = client.post(
+            "/api/v1/glossary",
+            json={
+                "abbr": "ZZTMP",
+                "term_ru": "Временный термин",
+                "term_en": "Temporary term",
+                "definition_ru": "Описание",
+                "definition_en": "Description",
+                "related": [],
+                "keywords": [],
+                "manual_sources": [],
+            },
+            headers=user_headers,
+        )
+        assert forbidden_create.status_code == 403
+
+        admin_login = client.post(
+            "/api/v1/auth/login/password",
+            json={"login": "admin", "password": "admin123"},
+        )
+        assert admin_login.status_code == 200
+        admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+        create_response = client.post(
+            "/api/v1/glossary",
+            json={
+                "abbr": "ZZTMP",
+                "term_ru": "Временный термин",
+                "term_en": "Temporary term",
+                "definition_ru": "Описание",
+                "definition_en": "Description",
+                "related": ["AMF"],
+                "keywords": ["tmp"],
+                "manual_sources": [{"label": "Synthetic", "doc_title_match": "Phase1 Synthetic Document 0001"}],
+            },
+            headers=admin_headers,
+        )
+        assert create_response.status_code == 200
+        assert create_response.json()["abbr"] == "ZZTMP"
+
+        update_response = client.patch(
+            "/api/v1/glossary/ZZTMP",
+            json={
+                "abbr": "ZZTMP",
+                "term_ru": "Временный термин 2",
+                "term_en": "Temporary term",
+                "definition_ru": "Описание 2",
+                "definition_en": "Description 2",
+                "related": ["SMF"],
+                "keywords": ["tmp2"],
+                "manual_sources": [],
+            },
+            headers=admin_headers,
+        )
+        assert update_response.status_code == 200
+        assert update_response.json()["term_ru"] == "Временный термин 2"
+
+        list_response = client.get("/api/v1/glossary")
+        assert any(item["abbr"] == "ZZTMP" for item in list_response.json())
+
+        delete_response = client.delete("/api/v1/glossary/ZZTMP", headers=admin_headers)
+        assert delete_response.status_code == 200
+        assert delete_response.json()["deleted"] is True
+
+        final_response = client.get("/api/v1/glossary")
+        assert all(item["abbr"] != "ZZTMP" for item in final_response.json())
 
     app.dependency_overrides.clear()
     settings.storage_db_path = original_db_path

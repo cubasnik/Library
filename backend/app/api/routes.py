@@ -23,6 +23,12 @@ from app.schemas import (
     KpiResponse,
     HotspotRecord,
     HotspotsResponse,
+    GlossaryDeleteResponse,
+    GlossaryEntry,
+    GlossaryExportResponse,
+    GlossaryImportRequest,
+    GlossaryImportResponse,
+    GlossaryEntryWriteRequest,
     MonitoringPanelsResponse,
     PasswordLoginRequest,
     RegistrationConfirmRequest,
@@ -35,6 +41,9 @@ from app.schemas import (
     QrStatusResponse,
     SearchRequest,
     SearchResponse,
+    TaskSuccessRateResponse,
+    TaskTrackRequest,
+    TaskTrackResponse,
     SmsSendRequest,
     SmsSendResponse,
     SmsVerifyRequest,
@@ -65,15 +74,26 @@ from app.services.document_service import (
     get_document_tree,
     ingest_document,
 )
+from app.services.glossary_service import (
+    create_glossary_entry,
+    delete_glossary_entry,
+    export_glossary_entries,
+    import_glossary_entries,
+    list_glossary_entries,
+    update_glossary_entry,
+)
 from app.services.metrics_service import (
     get_ai_latency_p95_ms,
     get_ai_samples_count,
     get_error_counts,
     get_indexed_documents_total,
+    get_search_latency_p50_ms,
     get_search_latency_p95_ms,
+    get_search_latency_p99_ms,
     get_search_samples_count,
     get_hotspot_stats,
     get_upload_counters,
+    get_upload_docs_per_hour,
     get_upload_throughput_per_min,
     record_ai_latency_ms,
     record_error,
@@ -86,14 +106,109 @@ from app.services.search_service import search_docs
 from app.services.storage_service import (
     get_admin_audit_events,
     get_ai_answer_audit_events,
+    get_task_success_metrics,
+    get_valid_citations_rate,
     save_admin_audit_event,
     save_ai_answer_audit_event,
     save_ai_feedback,
+    save_user_task_event,
 )
 
 
 router = APIRouter(tags=["api"])
 logger = logging.getLogger("app.api")
+
+RESPONSES_SEARCH = {
+    500: {
+        "description": "Internal Server Error",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Internal Server Error"}
+            }
+        },
+    },
+    503: {
+        "description": "Search dependency is unavailable",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Search service temporarily unavailable"}
+            }
+        },
+    },
+}
+
+RESPONSES_BOOTSTRAP = {
+    500: {
+        "description": "OpenSearch bootstrap failed",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Internal Server Error"}
+            }
+        },
+    },
+    503: {
+        "description": "OpenSearch is unavailable",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Service temporarily unavailable"}
+            }
+        },
+    },
+}
+
+RESPONSES_UPLOAD = {
+    400: {
+        "description": "Upload validation error",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Файл пустой или имеет неподдерживаемый формат"}
+            }
+        },
+    },
+    500: {
+        "description": "Unexpected upload processing error",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Internal Server Error"}
+            }
+        },
+    },
+    503: {
+        "description": "Chunk indexing failed",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Индексация чанков завершилась неуспешно после повторов"}
+            }
+        },
+    },
+}
+
+RESPONSES_AI_ASK = {
+    400: {
+        "description": "AI request validation error",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Question must not be empty"}
+            }
+        },
+    },
+    500: {
+        "description": "AI processing failed",
+        "content": {
+            "application/json": {
+                "example": {"detail": "AI request processing failed"}
+            }
+        },
+    },
+    503: {
+        "description": "AI context dependency unavailable",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Search service temporarily unavailable"}
+            }
+        },
+    },
+}
 
 
 def _extract_bearer_token(authorization: str | None) -> str:
@@ -119,7 +234,7 @@ def require_admin_principal(principal: TokenPrincipal = Depends(require_authenti
     return principal
 
 
-@router.post("/search", response_model=SearchResponse)
+@router.post("/search", response_model=SearchResponse, responses=RESPONSES_SEARCH)
 def search(payload: SearchRequest, client: OpenSearch = Depends(get_opensearch_client)) -> SearchResponse:
     started_at = time.perf_counter()
     try:
@@ -141,12 +256,12 @@ def search(payload: SearchRequest, client: OpenSearch = Depends(get_opensearch_c
     return result
 
 
-@router.post("/documents/index/bootstrap", response_model=IndexBootstrapResponse)
+@router.post("/documents/index/bootstrap", response_model=IndexBootstrapResponse, responses=RESPONSES_BOOTSTRAP)
 def bootstrap_documents_index(client: OpenSearch = Depends(get_opensearch_client)) -> IndexBootstrapResponse:
     return bootstrap_index(client)
 
 
-@router.post("/documents/upload", response_model=DocumentUploadResponse)
+@router.post("/documents/upload", response_model=DocumentUploadResponse, responses=RESPONSES_UPLOAD)
 def upload_document(
     file: UploadFile = File(...),
     title: str = Form(...),
@@ -237,7 +352,121 @@ def read_document(doc_id: str) -> DocumentRecord:
     return document
 
 
-@router.post("/ai/ask", response_model=AiAskResponse)
+@router.get("/glossary", response_model=list[GlossaryEntry])
+def read_glossary() -> list[GlossaryEntry]:
+    return list_glossary_entries()
+
+
+@router.get("/glossary/export", response_model=GlossaryExportResponse)
+def admin_export_glossary(
+    _: TokenPrincipal = Depends(require_admin_principal),
+) -> GlossaryExportResponse:
+    return GlossaryExportResponse(entries=export_glossary_entries())
+
+
+@router.post("/glossary/import", response_model=GlossaryImportResponse)
+def admin_import_glossary(
+    payload: GlossaryImportRequest,
+    principal: TokenPrincipal = Depends(require_admin_principal),
+) -> GlossaryImportResponse:
+    try:
+        entries = import_glossary_entries(payload.entries, replace_existing=payload.replace_existing)
+        save_admin_audit_event(
+            actor_login=principal.login,
+            actor_role=principal.role,
+            action="admin.glossary.import",
+            target="glossary",
+            status="success",
+            details={"imported": len(payload.entries), "replace_existing": payload.replace_existing},
+        )
+        return GlossaryImportResponse(imported=len(entries), replace_existing=payload.replace_existing)
+    except ValueError as exc:
+        save_admin_audit_event(
+            actor_login=principal.login,
+            actor_role=principal.role,
+            action="admin.glossary.import",
+            target="glossary",
+            status="failed",
+            details={"error": str(exc), "replace_existing": payload.replace_existing},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/glossary", response_model=GlossaryEntry)
+def admin_create_glossary_entry(
+    payload: GlossaryEntryWriteRequest,
+    principal: TokenPrincipal = Depends(require_admin_principal),
+) -> GlossaryEntry:
+    try:
+        entry = create_glossary_entry(payload)
+        save_admin_audit_event(
+            actor_login=principal.login,
+            actor_role=principal.role,
+            action="admin.glossary.create",
+            target=entry.abbr,
+            status="success",
+            details={"abbr": entry.abbr},
+        )
+        return entry
+    except ValueError as exc:
+        save_admin_audit_event(
+            actor_login=principal.login,
+            actor_role=principal.role,
+            action="admin.glossary.create",
+            target=payload.abbr,
+            status="failed",
+            details={"error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/glossary/{abbr}", response_model=GlossaryEntry)
+def admin_update_glossary_entry(
+    abbr: str,
+    payload: GlossaryEntryWriteRequest,
+    principal: TokenPrincipal = Depends(require_admin_principal),
+) -> GlossaryEntry:
+    try:
+        entry = update_glossary_entry(abbr, payload)
+        save_admin_audit_event(
+            actor_login=principal.login,
+            actor_role=principal.role,
+            action="admin.glossary.update",
+            target=abbr,
+            status="success",
+            details={"next_abbr": entry.abbr},
+        )
+        return entry
+    except ValueError as exc:
+        save_admin_audit_event(
+            actor_login=principal.login,
+            actor_role=principal.role,
+            action="admin.glossary.update",
+            target=abbr,
+            status="failed",
+            details={"error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/glossary/{abbr}", response_model=GlossaryDeleteResponse)
+def admin_delete_glossary_entry(
+    abbr: str,
+    principal: TokenPrincipal = Depends(require_admin_principal),
+) -> GlossaryDeleteResponse:
+    deleted = delete_glossary_entry(abbr)
+    save_admin_audit_event(
+        actor_login=principal.login,
+        actor_role=principal.role,
+        action="admin.glossary.delete",
+        target=abbr,
+        status="success" if deleted else "noop",
+        details={"deleted": deleted},
+    )
+    return GlossaryDeleteResponse(deleted=deleted, abbr=abbr)
+
+
+@router.post("/ai/ask", response_model=AiAskResponse, responses=RESPONSES_AI_ASK)
 def ai_ask(payload: AiAskRequest, client: OpenSearch = Depends(get_opensearch_client)) -> AiAskResponse:
     started_at = time.perf_counter()
     try:
@@ -260,8 +489,9 @@ def ai_ask(payload: AiAskRequest, client: OpenSearch = Depends(get_opensearch_cl
     if result.blocked:
         record_error("ai_blocked_no_citations")
     logger.info(
-        "ai_request mode=%s question_len=%s citations=%s confidence=%.2f blocked=%s trace_id=%s context_doc_ids=%s latency_ms=%.2f",
+        "ai_request mode=%s source_scope=%s question_len=%s citations=%s confidence=%.2f blocked=%s trace_id=%s context_doc_ids=%s latency_ms=%.2f",
         payload.mode,
+        payload.source_scope,
         len(payload.question),
         len(result.citations),
         result.confidence,
@@ -294,8 +524,12 @@ def ai_feedback(payload: AiFeedbackRequest) -> AiFeedbackResponse:
 def metrics_kpi() -> KpiResponse:
     return KpiResponse(
         indexed_documents_total=get_indexed_documents_total(),
+        search_latency_p50_ms=get_search_latency_p50_ms(),
         search_latency_p95_ms=get_search_latency_p95_ms(),
+        search_latency_p99_ms=get_search_latency_p99_ms(),
         search_samples=get_search_samples_count(),
+        upload_docs_per_hour=get_upload_docs_per_hour(),
+        valid_citations_rate=get_valid_citations_rate(),
     )
 
 
@@ -321,6 +555,22 @@ def metrics_hotspots() -> HotspotsResponse:
         generated_at=datetime.now(timezone.utc).isoformat(),
         hotspots=[HotspotRecord(**item) for item in get_hotspot_stats()[:20]],
     )
+
+
+@router.post("/tasks/track", response_model=TaskTrackResponse)
+def track_task(payload: TaskTrackRequest) -> TaskTrackResponse:
+    event_id = save_user_task_event(
+        task_name=payload.task_name,
+        success=payload.success,
+        duration_seconds=payload.duration_seconds,
+    )
+    return TaskTrackResponse(saved=True, event_id=event_id)
+
+
+@router.get("/metrics/task-success", response_model=TaskSuccessRateResponse)
+def metrics_task_success(window_hours: int = 24) -> TaskSuccessRateResponse:
+    metrics = get_task_success_metrics(window_hours=window_hours)
+    return TaskSuccessRateResponse(**metrics)
 
 
 @router.post("/auth/login/password", response_model=AuthSuccessResponse)

@@ -1,0 +1,340 @@
+{
+  "entries": [
+    {
+      "abbr": "AMF",
+      "term_ru": "Функция управления доступом и мобильностью",
+      "term_en": "Access and Mobility Management Function",
+      "definition_ru": "Управляет регистрацией UE, мобильностью и маршрутизацией сигнализации в контрольной плоскости 5G Core.",
+      "definition_en": "Handles UE registration, mobility procedures, and control-plane signaling routing in 5G Core.",
+      "related": [
+        "SMF",
+        "AUSF",
+        "gNB"
+      ],
+      "keywords": [
+        "amf",
+        "mobility",
+        "registration"
+      ],
+      "manual_sources": [
+        {
+          "label": "Ericsson EPC Mobility Management Guide",
+          "doc_title_match": "Ericsson EPC Mobility Management Guide"
+        },
+        {
+          "label": "Phase1 Synthetic Document 0001",
+          "doc_title_match": "Phase1 Synthetic Document 0001"
+        }
+      ]
+    },
+    {
+      "abbr": "AUSF",
+      "term_ru": "Функция сервера аутентификации",
+      "term_en": "Authentication Server Function",
+      "definition_ru": "Отвечает за аутентификацию абонента и проверку учетных данных в 5G Core.",
+      "definition_en": "Performs subscriber authentication and validates credentials in 5G Core.",
+      "related": [
+        "AMF",
+        "UDM"
+      ],
+      "keywords": [
+        "ausf",
+        "authentication"
+      ],
+      "manual_sources": [
+        {
+          "label": "Phase1 Synthetic Document 0002",
+          "doc_title_match": "Phase1 Synthetic Document 0002"
+        }
+      ]
+    },
+    {
+      "abbr": "EPC",
+      "term_ru": "Ядро пакетной сети LTE",
+      "term_en": "Evolved Packet Core",
+      "definition_ru": "Архитектура ядра LTE, обеспечивающая управление сеансами, мобильностью и доступом к пакетной сети.",
+      "definition_en": "LTE core architecture responsible for session control, mobility, and packet-network access.",
+      "related": [
+        "MME",
+        "SGW",
+        "PGW"
+      ],
+      "keywords": [
+        "epc",
+        "lte core"
+      ],
+      "manual_sources": [
+        {
+          "label": "Ericsson EPC Mobility Management Guide",
+          "doc_title_match": "Ericsson EPC Mobility Management Guide"
+        }
+      ]
+    },
+    {
+      "abbr": "gNB",
+      "term_ru": "Базовая станция 5G",
+      "term_en": "Next Generation NodeB",
+      "definition_ru": "Узел радиодоступа 5G NR, обеспечивающий интерфейсы N2/N3 к ядру сети.",
+      "definition_en": "5G NR radio access node exposing N2/N3 interfaces toward core functions.",
+      "related": [
+        "RAN",
+        "AMF",
+        "UPF"
+      ],
+      "keywords": [
+        "gnb",
+        "radio",
+        "n2",
+        "n3"
+      ],
+      "manual_sources": [
+        {
+          "label": "Phase1 Synthetic Document 0003",
+          "doc_title_match": "Phase1 Synthetic Document 0003"
+        }
+      ]
+    },
+    {
+      "abbr": "HSS",
+      "term_ru": "Домашний сервер абонентов",
+      "term_en": "Home Subscriber Server",
+      "definition_ru": "Хранилище профилей абонентов и параметров аутентификации в EPC.",
+      "definition_en": "Stores subscriber profiles and authentication parameters in EPC.",
+      "related": [
+        "MME",
+        "PCRF"
+      ],
+      "keywords": [
+        "hss",
+        "subscriber"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "MME",
+      "term_ru": "Узел управления мобильностью (LTE)",
+      "term_en": "Mobility Management Entity",
+      "definition_ru": "Основной узел контроля мобильности и NAS-сигнализации в EPC.",
+      "definition_en": "Core control node for mobility and NAS signaling in EPC.",
+      "related": [
+        "EPC",
+        "HSS",
+        "SGW"
+      ],
+      "keywords": [
+        "mme",
+        "mobility",
+        "nas"
+      ],
+      "manual_sources": [
+        {
+          "label": "Ericsson EPC Mobility Management Guide",
+          "doc_title_match": "Ericsson EPC Mobility Management Guide"
+        }
+      ]
+    },
+    {
+      "abbr": "NRF",
+      "term_ru": "Репозиторий сетевых функций",
+      "term_en": "Network Repository Function",
+      "definition_ru": "Каталог сетевых функций и discovery-сервис в сервис-ориентированной архитектуре 5G.",
+      "definition_en": "Catalog and service discovery function in the 5G service-based architecture.",
+      "related": [
+        "AMF",
+        "SMF",
+        "PCF"
+      ],
+      "keywords": [
+        "nrf",
+        "repository",
+        "discovery"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "NSSF",
+      "term_ru": "Функция выбора сетевого среза",
+      "term_en": "Network Slice Selection Function",
+      "definition_ru": "Определяет подходящий сетевой срез в зависимости от профиля и контекста абонента.",
+      "definition_en": "Selects suitable network slices according to subscriber profile and context.",
+      "related": [
+        "AMF",
+        "SMF"
+      ],
+      "keywords": [
+        "nssf",
+        "slice"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "PCF",
+      "term_ru": "Функция управления политиками",
+      "term_en": "Policy Control Function",
+      "definition_ru": "Формирует policy-решения для QoS, charging и маршрутизации трафика.",
+      "definition_en": "Generates policy decisions for QoS, charging, and traffic steering.",
+      "related": [
+        "SMF",
+        "UDR"
+      ],
+      "keywords": [
+        "pcf",
+        "policy",
+        "qos"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "PCRF",
+      "term_ru": "Функция правил политик и тарификации",
+      "term_en": "Policy and Charging Rules Function",
+      "definition_ru": "Управляет правилами QoS и тарификации в EPC.",
+      "definition_en": "Controls QoS and charging rules in EPC.",
+      "related": [
+        "PGW",
+        "HSS"
+      ],
+      "keywords": [
+        "pcrf",
+        "charging",
+        "qos"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "PGW",
+      "term_ru": "Шлюз к пакетной сети данных",
+      "term_en": "Packet Data Network Gateway",
+      "definition_ru": "Обеспечивает выход абонентского трафика EPC во внешние IP-сети.",
+      "definition_en": "Provides EPC user traffic breakout to external IP data networks.",
+      "related": [
+        "SGW",
+        "PCRF"
+      ],
+      "keywords": [
+        "pgw",
+        "gateway"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "RAN",
+      "term_ru": "Сеть радиодоступа",
+      "term_en": "Radio Access Network",
+      "definition_ru": "Радиочасть сети, включающая базовые станции и интерфейсы подключения UE.",
+      "definition_en": "Radio access segment with base stations and UE attachment interfaces.",
+      "related": [
+        "gNB",
+        "UE"
+      ],
+      "keywords": [
+        "ran",
+        "radio"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "SGW",
+      "term_ru": "Обслуживающий шлюз",
+      "term_en": "Serving Gateway",
+      "definition_ru": "Якорь пользовательской плоскости между eNodeB/gNB и PGW в EPC.",
+      "definition_en": "User-plane anchor between access nodes and PGW in EPC.",
+      "related": [
+        "MME",
+        "PGW"
+      ],
+      "keywords": [
+        "sgw",
+        "serving gateway"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "SMF",
+      "term_ru": "Функция управления сессиями",
+      "term_en": "Session Management Function",
+      "definition_ru": "Управляет PDU-сессиями, адресацией UE и взаимодействием с UPF.",
+      "definition_en": "Manages PDU sessions, UE addressing, and interaction with UPF.",
+      "related": [
+        "AMF",
+        "UPF",
+        "PCF"
+      ],
+      "keywords": [
+        "smf",
+        "session",
+        "pdu"
+      ],
+      "manual_sources": [
+        {
+          "label": "Phase1 Synthetic Document 0004",
+          "doc_title_match": "Phase1 Synthetic Document 0004"
+        }
+      ]
+    },
+    {
+      "abbr": "UDM",
+      "term_ru": "Унифицированное управление данными",
+      "term_en": "Unified Data Management",
+      "definition_ru": "Управляет данными абонента и параметрами подписки в 5G.",
+      "definition_en": "Handles subscriber data and subscription parameters in 5G.",
+      "related": [
+        "AUSF",
+        "UDR"
+      ],
+      "keywords": [
+        "udm",
+        "subscriber data"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "UDR",
+      "term_ru": "Унифицированное хранилище данных",
+      "term_en": "Unified Data Repository",
+      "definition_ru": "Централизованное хранилище профилей, политик и параметров подписки.",
+      "definition_en": "Centralized storage for profiles, policies, and subscription data.",
+      "related": [
+        "UDM",
+        "PCF"
+      ],
+      "keywords": [
+        "udr",
+        "repository"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "UE",
+      "term_ru": "Пользовательское оборудование",
+      "term_en": "User Equipment",
+      "definition_ru": "Конечное устройство абонента, которое регистрируется в сети и передает трафик.",
+      "definition_en": "Subscriber end device that registers in the network and carries user traffic.",
+      "related": [
+        "RAN",
+        "AMF"
+      ],
+      "keywords": [
+        "ue",
+        "device"
+      ],
+      "manual_sources": []
+    },
+    {
+      "abbr": "UPF",
+      "term_ru": "Функция пользовательской плоскости",
+      "term_en": "User Plane Function",
+      "definition_ru": "Обрабатывает пользовательский трафик, маршрутизацию и применение правил QoS в 5G.",
+      "definition_en": "Processes user traffic, forwarding, and QoS enforcement in 5G.",
+      "related": [
+        "SMF",
+        "gNB"
+      ],
+      "keywords": [
+        "upf",
+        "user plane"
+      ],
+      "manual_sources": []
+    }
+  ]
+}

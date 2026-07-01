@@ -46,6 +46,7 @@ class AiAskRequest(BaseModel):
     context_doc_ids: list[str] = Field(default_factory=list)
     max_citations: int = Field(default=5, ge=1, le=20)
     mode: Literal["explain", "compare", "diagnose"] = "explain"
+    source_scope: Literal["local", "internet"] = "local"
 
 
 class AiCitation(BaseModel):
@@ -247,6 +248,53 @@ class AdminUserDeleteResponse(BaseModel):
     login: str
 
 
+class GlossaryManualSource(BaseModel):
+    label: str = Field(min_length=1, max_length=255)
+    doc_title_match: str | None = Field(default=None, max_length=255)
+    doc_id: str | None = Field(default=None, max_length=255)
+
+
+class GlossaryEntry(BaseModel):
+    abbr: str = Field(min_length=1, max_length=64)
+    term_ru: str = Field(min_length=1, max_length=255)
+    term_en: str = Field(min_length=1, max_length=255)
+    definition_ru: str = Field(min_length=1, max_length=4000)
+    definition_en: str = Field(min_length=1, max_length=4000)
+    related: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    manual_sources: list[GlossaryManualSource] = Field(default_factory=list)
+
+
+class GlossaryEntryWriteRequest(BaseModel):
+    abbr: str = Field(min_length=1, max_length=64)
+    term_ru: str = Field(min_length=1, max_length=255)
+    term_en: str = Field(min_length=1, max_length=255)
+    definition_ru: str = Field(min_length=1, max_length=4000)
+    definition_en: str = Field(min_length=1, max_length=4000)
+    related: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    manual_sources: list[GlossaryManualSource] = Field(default_factory=list)
+
+
+class GlossaryDeleteResponse(BaseModel):
+    deleted: bool
+    abbr: str
+
+
+class GlossaryExportResponse(BaseModel):
+    entries: list[GlossaryEntry] = Field(default_factory=list)
+
+
+class GlossaryImportRequest(BaseModel):
+    entries: list[GlossaryEntryWriteRequest] = Field(default_factory=list)
+    replace_existing: bool = True
+
+
+class GlossaryImportResponse(BaseModel):
+    imported: int
+    replace_existing: bool
+
+
 class RegistrationValidateRequest(BaseModel):
     login: str = Field(min_length=3, max_length=120)
     password: str = Field(min_length=1, max_length=200)
@@ -281,8 +329,30 @@ class RegistrationConfirmRequest(BaseModel):
 
 class KpiResponse(BaseModel):
     indexed_documents_total: int
+    search_latency_p50_ms: float
     search_latency_p95_ms: float
+    search_latency_p99_ms: float
     search_samples: int
+    upload_docs_per_hour: float
+    valid_citations_rate: float
+
+
+class TaskTrackRequest(BaseModel):
+    task_name: str = Field(min_length=2, max_length=120)
+    success: bool
+    duration_seconds: float = Field(ge=0.0, le=36000.0)
+
+
+class TaskTrackResponse(BaseModel):
+    saved: bool
+    event_id: str
+
+
+class TaskSuccessRateResponse(BaseModel):
+    task_success_rate: float
+    avg_time_to_success_seconds: float
+    samples: int
+    window_hours: int
 
 
 class MonitoringPanelsResponse(BaseModel):

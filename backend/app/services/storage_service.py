@@ -12,6 +12,7 @@ from app.schemas import (
     DocumentMetadata,
     DocumentRecord,
     DocumentUploadResponse,
+    GlossaryEntry,
     DocumentTreeDomain,
     DocumentTreeProduct,
     DocumentTreeRelease,
@@ -104,6 +105,29 @@ def initialize_storage() -> None:
             CREATE TABLE IF NOT EXISTS ingestion_idempotency (
                 request_key TEXT PRIMARY KEY,
                 response_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS user_task_events (
+                event_id TEXT PRIMARY KEY,
+                task_name TEXT NOT NULL,
+                success INTEGER NOT NULL,
+                duration_seconds REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_user_task_events_created ON user_task_events(created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS glossary_entries (
+                abbr TEXT PRIMARY KEY,
+                term_ru TEXT NOT NULL,
+                term_en TEXT NOT NULL,
+                definition_ru TEXT NOT NULL,
+                definition_en TEXT NOT NULL,
+                related_json TEXT NOT NULL,
+                keywords_json TEXT NOT NULL,
+                manual_sources_json TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -405,3 +429,157 @@ def save_idempotent_upload_result(request_key: str, response: DocumentUploadResp
             """,
             (request_key, serialized),
         )
+
+
+def get_valid_citations_rate() -> float:
+    with _get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN blocked = 0 AND citations_count > 0 THEN 1 ELSE 0 END) AS valid
+            FROM ai_answer_audit_log
+            """
+        ).fetchone()
+    total = int(row["total"] or 0) if row is not None else 0
+    valid = int(row["valid"] or 0) if row is not None else 0
+    if total == 0:
+        return 0.0
+    return round(valid / total, 4)
+
+
+def save_user_task_event(task_name: str, success: bool, duration_seconds: float) -> str:
+    event_id = str(uuid4())
+    with _get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO user_task_events (event_id, task_name, success, duration_seconds)
+            VALUES (?, ?, ?, ?)
+            """,
+            (event_id, task_name, 1 if success else 0, float(duration_seconds)),
+        )
+    return event_id
+
+
+def get_task_success_metrics(window_hours: int = 24) -> dict:
+    safe_window = max(1, min(window_hours, 24 * 30))
+    with _get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successful,
+                AVG(CASE WHEN success = 1 THEN duration_seconds END) AS avg_success_duration
+            FROM user_task_events
+            WHERE created_at >= datetime('now', ?)
+            """,
+            (f"-{safe_window} hours",),
+        ).fetchone()
+
+    total = int(row["total"] or 0) if row is not None else 0
+    successful = int(row["successful"] or 0) if row is not None else 0
+    avg_success_duration = float(row["avg_success_duration"] or 0.0) if row is not None else 0.0
+    success_rate = round((successful / total), 4) if total else 0.0
+    return {
+        "task_success_rate": success_rate,
+        "avg_time_to_success_seconds": round(avg_success_duration, 2),
+        "samples": total,
+        "window_hours": safe_window,
+    }
+
+
+def glossary_entries_count() -> int:
+    with _get_connection() as connection:
+        row = connection.execute("SELECT COUNT(*) AS total FROM glossary_entries").fetchone()
+    return int(row["total"] if row is not None else 0)
+
+
+def list_glossary_entries_storage() -> list[GlossaryEntry]:
+    with _get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT abbr, term_ru, term_en, definition_ru, definition_en, related_json, keywords_json, manual_sources_json
+            FROM glossary_entries
+            ORDER BY LOWER(abbr)
+            """
+        ).fetchall()
+
+    result: list[GlossaryEntry] = []
+    for row in rows:
+        result.append(
+            GlossaryEntry(
+                abbr=row["abbr"],
+                term_ru=row["term_ru"],
+                term_en=row["term_en"],
+                definition_ru=row["definition_ru"],
+                definition_en=row["definition_en"],
+                related=json.loads(row["related_json"] or "[]"),
+                keywords=json.loads(row["keywords_json"] or "[]"),
+                manual_sources=json.loads(row["manual_sources_json"] or "[]"),
+            )
+        )
+    return result
+
+
+def save_glossary_entry_storage(entry: GlossaryEntry) -> None:
+    with _get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO glossary_entries(
+                abbr, term_ru, term_en, definition_ru, definition_en,
+                related_json, keywords_json, manual_sources_json,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(abbr)
+            DO UPDATE SET
+                term_ru = excluded.term_ru,
+                term_en = excluded.term_en,
+                definition_ru = excluded.definition_ru,
+                definition_en = excluded.definition_en,
+                related_json = excluded.related_json,
+                keywords_json = excluded.keywords_json,
+                manual_sources_json = excluded.manual_sources_json,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                entry.abbr,
+                entry.term_ru,
+                entry.term_en,
+                entry.definition_ru,
+                entry.definition_en,
+                json.dumps(entry.related, ensure_ascii=False),
+                json.dumps(entry.keywords, ensure_ascii=False),
+                json.dumps([item.model_dump() for item in entry.manual_sources], ensure_ascii=False),
+            ),
+        )
+
+
+def delete_glossary_entry_storage(abbr: str) -> bool:
+    with _get_connection() as connection:
+        cursor = connection.execute("DELETE FROM glossary_entries WHERE LOWER(abbr) = LOWER(?)", (abbr,))
+    return cursor.rowcount > 0
+
+
+def replace_glossary_entries_storage(entries: list[GlossaryEntry]) -> None:
+    with _get_connection() as connection:
+        connection.execute("DELETE FROM glossary_entries")
+        for entry in entries:
+            connection.execute(
+                """
+                INSERT INTO glossary_entries(
+                    abbr, term_ru, term_en, definition_ru, definition_en,
+                    related_json, keywords_json, manual_sources_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    entry.abbr,
+                    entry.term_ru,
+                    entry.term_en,
+                    entry.definition_ru,
+                    entry.definition_en,
+                    json.dumps(entry.related, ensure_ascii=False),
+                    json.dumps(entry.keywords, ensure_ascii=False),
+                    json.dumps([item.model_dump() for item in entry.manual_sources], ensure_ascii=False),
+                ),
+            )

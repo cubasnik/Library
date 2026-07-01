@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Обозреватель Технической Документации</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=5" />
+    <link rel="stylesheet" href="/assets/styles.css?v=15" />
   </head>
   <body>
     <header class="header-top">
@@ -34,46 +34,52 @@
         <button type="button" class="tab-button" data-tab="home" aria-controls="home-view">Домой</button>
         <button type="button" class="tab-button active" data-tab="library" aria-controls="library-view">Библиотека</button>
         <button type="button" class="tab-button" data-tab="glossary" aria-controls="glossary-view">Справочник</button>
+        <button type="button" id="glossary-admin-tab" class="tab-button is-hidden" data-tab="glossary-admin" aria-controls="glossary-admin-view">Администрирование</button>
         <button type="button" class="tab-button" data-tab="my-collection" aria-controls="collection-view">Моя Коллекция</button>
         <button type="button" class="tab-button" data-tab="my-doc" aria-controls="mydoc-view">Мои Документы</button>
       </nav>
 
       <form id="search-form" class="search-row">
-        <button type="button" class="filter-icon" aria-label="Фильтры">⏃</button>
+        <button type="button" class="filter-icon" aria-label="Поиск по библиотеке">📚</button>
         <input
           id="search-input"
           type="search"
-          placeholder="Search for a library..."
-          aria-label="Search for a library"
+          placeholder="Поиск библиотеки..."
+          aria-label="Поиск библиотеки"
+          autocomplete="off"
         />
         <button type="submit" class="search-submit" aria-label="Поиск">🔍</button>
+        <ul id="search-suggestions" class="search-suggestions is-hidden" aria-label="Подсказки поиска"></ul>
       </form>
 
       <main class="layout">
         <aside class="filters-panel" id="filters-panel">
           <div class="filters-header">
-            <h2>Filters</h2>
-            <span class="filters-close">×</span>
+            <h2>Фильтры</h2>
+            <div class="filters-header-actions">
+              <button id="filters-reset" type="button" class="filters-reset-button">Сбросить все фильтры</button>
+              <span class="filters-close">×</span>
+            </div>
           </div>
           <div id="filters-content" class="filters-content">
             <details open>
-              <summary>Library Type <span>(all)</span></summary>
+              <summary>Тип библиотеки <span>(все)</span></summary>
             </details>
             <details open>
-              <summary>Date Created <span>(all)</span></summary>
+              <summary>Дата создания <span>(все)</span></summary>
             </details>
             <details open>
-              <summary>Product Folder <span>(all)</span></summary>
+              <summary>Папка продукта <span>(все)</span></summary>
             </details>
           </div>
         </aside>
 
         <section class="content-panel">
           <section id="library-view" class="tab-view">
-            <h1 class="content-title">Library Search - Help</h1>
+            <h1 class="content-title">Поиск по библиотеке — помощь</h1>
 
             <section class="recent-box">
-              <h2>Recently Opened Libraries</h2>
+              <h2>Недавно открытые библиотеки</h2>
               <ul id="recent-list" class="recent-list">
                 <li class="empty-state">Библиотеки пока не загружены.</li>
               </ul>
@@ -82,15 +88,15 @@
             <section class="help-box">
               <div class="book-icon" aria-hidden="true">📖</div>
               <div>
-                <h3>Library Search</h3>
-                <p>Learn how to find any library both fast and easy using ELEX filter and search features!</p>
+                <h3>Поиск по библиотеке</h3>
+                <p>Здесь можно быстро находить любую библиотеку с помощью фильтров и поиска ОТД.</p>
               </div>
             </section>
 
             <section class="search-results-wrap">
               <div class="result-header">
-                <h2>Search Results</h2>
-                <button id="refresh-tree" type="button" class="ghost-button">Refresh</button>
+                <h2>Результаты поиска</h2>
+                <button id="refresh-tree" type="button" class="ghost-button">Обновить</button>
               </div>
               <div id="search-results" class="search-results empty-state">Результаты поиска появятся здесь.</div>
             </section>
@@ -103,11 +109,191 @@
           <section id="home-view" class="tab-view is-hidden">
             <h1 class="content-title">Домой</h1>
             <article class="reader-card">Добро пожаловать в Обозреватель Технической Документации. Откройте раздел Библиотека для поиска и просмотра документации.</article>
+
+            <section class="ai-home-panel" aria-labelledby="ai-home-title">
+              <div class="result-header">
+                <h2 id="ai-home-title">Ответы ИИ</h2>
+              </div>
+              <div class="ai-home-body">
+                <label class="auth-field-label" for="ai-home-question">Ваш вопрос</label>
+                <textarea id="ai-home-question" class="auth-input ai-home-question" placeholder="Например: Объясни процедуру paging в EPC"></textarea>
+
+                <div class="ai-home-grid">
+                  <div>
+                    <label class="auth-field-label" for="ai-home-mode">Режим ответа</label>
+                    <select id="ai-home-mode" class="auth-input">
+                      <option value="explain">Объяснить</option>
+                      <option value="compare">Сравнить</option>
+                      <option value="diagnose">Диагностировать</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="auth-field-label" for="ai-home-source">Источник</label>
+                    <select id="ai-home-source" class="auth-input">
+                      <option value="local">Локальная библиотека</option>
+                      <option value="internet">Интернет</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="auth-field-label" for="ai-home-max-citations">Макс. цитат</label>
+                    <input id="ai-home-max-citations" class="auth-input" type="number" min="1" max="10" value="3" />
+                  </div>
+                </div>
+
+                <label class="ai-home-checkbox">
+                  <input id="ai-home-use-current-doc" type="checkbox" checked />
+                  Использовать текущий открытый документ как контекст
+                </label>
+
+                <div class="ai-home-actions">
+                  <button id="ai-home-submit" type="button" class="auth-submit">Спросить ИИ</button>
+                </div>
+
+                <p id="ai-home-status" class="auth-feedback empty-state">Введите вопрос и нажмите «Спросить ИИ».</p>
+
+                <article id="ai-home-answer" class="reader-card empty-state">Ответ ИИ появится здесь.</article>
+
+                <section class="ai-home-citations">
+                  <h3>Источники</h3>
+                  <ul id="ai-home-citations-list" class="recent-list">
+                    <li class="empty-state">Цитаты появятся после успешного ответа.</li>
+                  </ul>
+                </section>
+              </div>
+            </section>
           </section>
 
           <section id="glossary-view" class="tab-view is-hidden">
             <h1 class="content-title">Справочник</h1>
-            <article class="reader-card">Раздел глоссария готов к подключению. Здесь будут отображаться термины и определения.</article>
+            <section class="glossary-panel" aria-labelledby="glossary-title">
+              <div class="result-header">
+                <h2 id="glossary-title">Термины и аббревиатуры</h2>
+              </div>
+
+              <div class="glossary-toolbar">
+                <label class="auth-field-label" for="glossary-search">Поиск по аббревиатуре или термину</label>
+                <input id="glossary-search" class="auth-input" type="search" placeholder="Например: AMF, EPC, Session Management" />
+                <div class="glossary-controls">
+                  <div>
+                    <label class="auth-field-label" for="glossary-language">Язык отображения</label>
+                    <select id="glossary-language" class="auth-input">
+                      <option value="ru" selected>Русский</option>
+                      <option value="en">English</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="auth-field-label" for="glossary-sort">Сортировка</label>
+                    <select id="glossary-sort" class="auth-input">
+                      <option value="abbr" selected>По аббревиатуре</option>
+                      <option value="ru">По русскому названию</option>
+                      <option value="en">По английскому названию</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="glossary-layout">
+                <aside class="glossary-list-wrap">
+                  <ul id="glossary-list" class="glossary-list">
+                    <li class="empty-state">Термины загружаются...</li>
+                  </ul>
+                </aside>
+
+                <article id="glossary-details" class="glossary-details empty-state">
+                  Выберите термин из списка слева, чтобы посмотреть описание и связанные документы.
+                </article>
+              </div>
+            </section>
+          </section>
+
+          <section id="glossary-admin-view" class="tab-view is-hidden">
+            <h1 class="content-title">Администрирование справочника</h1>
+            <section id="glossary-admin-panel" class="glossary-admin-panel is-hidden" aria-labelledby="glossary-admin-title">
+              <div class="result-header">
+                <h2 id="glossary-admin-title">Редактор справочника (admin)</h2>
+              </div>
+              <div class="glossary-admin-body">
+                <div class="glossary-admin-toolbar">
+                  <div>
+                    <label class="auth-field-label" for="glossary-admin-search">Фильтр записей</label>
+                    <input id="glossary-admin-search" class="auth-input" type="search" placeholder="Например: AMF, mobility, policy" />
+                  </div>
+                  <div class="glossary-admin-toolbar-actions">
+                    <label class="auth-field-label" for="glossary-admin-import-file">Импорт / экспорт</label>
+                    <div class="auth-actions-row">
+                      <input id="glossary-admin-import-file" class="is-hidden" type="file" accept="application/json,.json" />
+                      <button id="glossary-admin-template" type="button" class="auth-secondary">Шаблон JSON</button>
+                      <button id="glossary-admin-import" type="button" class="auth-secondary">Импорт JSON</button>
+                      <button id="glossary-admin-export" type="button" class="auth-secondary">Экспорт JSON</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="glossary-admin-layout">
+                  <aside class="glossary-admin-list-wrap">
+                    <ul id="glossary-admin-list" class="glossary-list">
+                      <li class="empty-state">Записи загружаются...</li>
+                    </ul>
+                    <div class="glossary-admin-pagination">
+                      <button id="glossary-admin-prev" type="button" class="auth-secondary">Назад</button>
+                      <span id="glossary-admin-page-status">Страница 1</span>
+                      <button id="glossary-admin-next" type="button" class="auth-secondary">Вперед</button>
+                    </div>
+                  </aside>
+
+                  <div class="glossary-admin-editor">
+                <div class="glossary-admin-grid">
+                  <div>
+                    <label class="auth-field-label" for="glossary-admin-abbr">Аббревиатура</label>
+                    <input id="glossary-admin-abbr" class="auth-input" type="text" placeholder="Например: AMF" />
+                  </div>
+                  <div>
+                    <label class="auth-field-label" for="glossary-admin-related">Связанные термины</label>
+                    <input id="glossary-admin-related" class="auth-input" type="text" placeholder="SMF, AUSF, gNB" />
+                  </div>
+                </div>
+
+                <label class="auth-field-label" for="glossary-admin-term-ru">Русское название</label>
+                <input id="glossary-admin-term-ru" class="auth-input" type="text" placeholder="Функция управления доступом и мобильностью" />
+
+                <label class="auth-field-label" for="glossary-admin-term-en">English name</label>
+                <input id="glossary-admin-term-en" class="auth-input" type="text" placeholder="Access and Mobility Management Function" />
+
+                <label class="auth-field-label" for="glossary-admin-definition-ru">Описание RU</label>
+                <textarea id="glossary-admin-definition-ru" class="auth-input glossary-admin-textarea" placeholder="Описание на русском языке"></textarea>
+
+                <label class="auth-field-label" for="glossary-admin-definition-en">Description EN</label>
+                <textarea id="glossary-admin-definition-en" class="auth-input glossary-admin-textarea" placeholder="Description in English"></textarea>
+
+                <label class="auth-field-label" for="glossary-admin-keywords">Ключевые слова</label>
+                <input id="glossary-admin-keywords" class="auth-input" type="text" placeholder="amf, mobility, registration" />
+
+                <label class="auth-field-label">Закрепленные источники</label>
+                <div id="glossary-admin-sources-list" class="glossary-admin-sources-list"></div>
+                <button id="glossary-admin-add-source" type="button" class="auth-secondary glossary-admin-add-source">Добавить источник</button>
+                <p class="glossary-admin-hint">Для каждого источника можно указать отображаемое название, подстроку поиска по заголовку документа и необязательный `doc_id`.</p>
+
+                <div class="auth-actions-row">
+                  <button id="glossary-admin-new" type="button" class="auth-secondary">Новая запись</button>
+                  <button id="glossary-admin-save" type="button" class="auth-submit">Сохранить</button>
+                  <button id="glossary-admin-delete" type="button" class="auth-secondary">Удалить</button>
+                </div>
+
+                <p id="glossary-admin-feedback" class="auth-feedback empty-state">Войдите под пользователем с ролью admin, чтобы редактировать справочник.</p>
+
+                <section class="glossary-admin-audit" aria-labelledby="glossary-admin-audit-title">
+                  <div class="result-header">
+                    <h3 id="glossary-admin-audit-title">Журнал изменений справочника</h3>
+                    <button id="glossary-admin-audit-refresh" type="button" class="ghost-button">Обновить</button>
+                  </div>
+                  <ul id="glossary-admin-audit-list" class="recent-list">
+                    <li class="empty-state">Журнал еще не загружен.</li>
+                  </ul>
+                </section>
+                  </div>
+                </div>
+              </div>
+            </section>
           </section>
 
           <section id="collection-view" class="tab-view is-hidden">
@@ -134,7 +320,7 @@
           <ol>
             <li>Перейдите во вкладку Библиотека.</li>
             <li>Введите запрос в поле поиска и нажмите кнопку поиска.</li>
-            <li>Откройте документ из списка результатов или Recently Opened Libraries.</li>
+            <li>Откройте документ из списка результатов или раздела «Недавно открытые библиотеки».</li>
           </ol>
           <p>Полезные вкладки:</p>
           <ul>
@@ -156,7 +342,7 @@
         <div class="auth-method-tabs" role="tablist" aria-label="Способ входа">
           <button type="button" class="auth-method-tab active" data-auth-method="password" role="tab" aria-selected="true">Логин и Пароль</button>
           <button type="button" class="auth-method-tab" data-auth-method="sms" role="tab" aria-selected="false">СМС по номеру</button>
-          <button type="button" class="auth-method-tab" data-auth-method="qr" role="tab" aria-selected="false">QR Code</button>
+          <button type="button" class="auth-method-tab" data-auth-method="qr" role="tab" aria-selected="false">QR-код</button>
         </div>
         <div class="help-modal-content">
           <section class="auth-method-view" data-auth-view="password">
@@ -179,13 +365,13 @@
           </section>
 
           <section class="auth-method-view is-hidden" data-auth-view="qr">
-            <p>Откройте мобильное приложение и отсканируйте QR Code для входа:</p>
-            <div class="qr-placeholder" aria-label="QR Code">
-              <img id="qr-image" class="qr-image is-hidden" alt="QR Code для входа" />
+            <p>Откройте мобильное приложение и отсканируйте QR-код для входа:</p>
+            <div class="qr-placeholder" aria-label="QR-код">
+              <img id="qr-image" class="qr-image is-hidden" alt="QR-код для входа" />
               <span id="qr-fallback">QR</span>
             </div>
             <div class="auth-actions-row">
-              <button id="auth-qr-refresh" type="button" class="auth-secondary">Обновить QR</button>
+              <button id="auth-qr-refresh" type="button" class="auth-secondary">Обновить QR-код</button>
               <button id="auth-qr-confirm" type="button" class="auth-submit">Подтвердить сканирование</button>
             </div>
             <p class="empty-state">После сканирования вход будет подтвержден автоматически.</p>
@@ -235,6 +421,6 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=5"></script>
+    <script src="/assets/app.js?v=15"></script>
   </body>
 </html>
